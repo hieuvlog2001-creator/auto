@@ -1,0 +1,706 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IL2CPP Dump RVA Finder</title>
+
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --panel: #141c30;
+  --border: #2a3650;
+  --text: #e8edf8;
+  --muted: #98a8c4;
+  --accent: #6c8cff;
+  --green: #45d6a0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.6 system-ui, sans-serif;
+}
+main {
+  width: min(1200px, 94%);
+  margin: 30px auto;
+}
+h1 { font-size: 27px; margin-bottom: 4px; }
+h2 { font-size: 17px; margin-top: 0; }
+p, .muted { color: var(--muted); }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin: 18px 0;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+label {
+  display: block;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+input, textarea, select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #0b1222;
+  color: var(--text);
+  padding: 10px;
+  font: inherit;
+}
+textarea {
+  min-height: 110px;
+  resize: vertical;
+  font-family: ui-monospace, monospace;
+}
+input[type="file"] { padding: 8px; }
+button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 14px;
+  background: #202c47;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+}
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+button:hover { filter: brightness(1.15); }
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 14px;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.stat {
+  background: #0b1222;
+  padding: 13px;
+  border-radius: 8px;
+}
+.stat strong {
+  display: block;
+  font-size: 23px;
+  color: var(--green);
+}
+.result {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  margin-top: 12px;
+  padding: 15px;
+  overflow-wrap: anywhere;
+}
+.result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.method { font-weight: 700; font-size: 16px; }
+.addresses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.address {
+  background: #0b1222;
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+.address b { color: var(--green); }
+code {
+  color: #b6c7ff;
+  overflow-wrap: anywhere;
+}
+.small { font-size: 12px; color: var(--muted); }
+.status { margin-top: 8px; color: var(--green); }
+.error { color: #ff9696; }
+[hidden] { display: none !important; }
+
+@media(max-width:650px) {
+  .grid { grid-template-columns: 1fr; }
+  main { width: 96%; margin: 15px auto; }
+  .panel { padding: 13px; }
+}
+</style>
+</head>
+
+<body>
+<main>
+  <h1>IL2CPP Dump RVA Finder</h1>
+  <p>Tìm phương thức trong dump.cs và trích xuất địa chỉ có sẵn.</p>
+
+  <section class="panel">
+    <h2>01. Nạp file dump</h2>
+    <label for="dumpFile">Chọn file dump.cs hoặc file văn bản dump</label>
+    <input id="dumpFile" type="file"
+           accept=".cs,.txt,.dump,.log">
+    <div id="fileStatus" class="status">Chưa chọn file.</div>
+
+    <div style="margin-top:15px">
+      <label for="dumpText">Hoặc dán nội dung dump vào đây</label>
+      <textarea id="dumpText"
+        placeholder="// RVA: 0x123456&#10;// Offset: 0x123456&#10;public bool SetVisible(COM_PLAYERCAMP camp, bool bVisible, bool forceSync = false)"></textarea>
+    </div>
+
+    <div class="actions">
+      <button id="clearDump">Xóa nội dung</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>02. Cấu hình tìm kiếm</h2>
+
+    <label for="queries">Tên hàm cần tìm — mỗi dòng một hàm</label>
+    <textarea id="queries">SetVisible
+ShowHeroInfo
+GetGameRoomType</textarea>
+
+    <div class="grid" style="margin-top:14px">
+      <div>
+        <label for="className">Tên class (không bắt buộc)</label>
+        <input id="className" placeholder="Ví dụ: SLevelContext">
+      </div>
+      <div>
+        <label for="namespaceName">Namespace (không bắt buộc)</label>
+        <input id="namespaceName"
+          placeholder="Ví dụ: Assets.Scripts.GameLogic">
+      </div>
+      <div>
+        <label for="returnType">Kiểu trả về (không bắt buộc)</label>
+        <input id="returnType" placeholder="bool, void, int...">
+      </div>
+      <div>
+        <label for="parameters">Tham số cần đối chiếu (không bắt buộc)</label>
+        <input id="parameters"
+          placeholder="COM_PLAYERCAMP camp, bool bVisible">
+      </div>
+    </div>
+
+    <p class="small">
+      Để trống bộ lọc nếu chỉ muốn tìm theo tên hàm.
+      Tham số được đối chiếu theo tên kiểu và số lượng.
+    </p>
+
+    <div class="actions">
+      <button class="primary" id="searchBtn">Tìm RVA</button>
+      <button id="exportBtn">Xuất JSON</button>
+      <button id="copyAllBtn">Sao chép kết quả</button>
+    </div>
+    <div id="searchStatus" class="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>03. Kết quả</h2>
+    <div class="stats">
+      <div class="stat">
+        <strong id="totalMethods">0</strong>
+        <span class="small">Phương thức khớp</span>
+      </div>
+      <div class="stat">
+        <strong id="withRva">0</strong>
+        <span class="small">Có RVA</span>
+      </div>
+      <div class="stat">
+        <strong id="withoutRva">0</strong>
+        <span class="small">Chưa có RVA</span>
+      </div>
+    </div>
+    <div id="results">
+      <p>Hãy nạp dump và nhấn Tìm RVA.</p>
+    </div>
+  </section>
+
+  <p class="small">
+    Công cụ xử lý cục bộ trong trình duyệt. Địa chỉ chỉ được hiển thị
+    khi tìm thấy thông tin tương ứng trong file nguồn.
+  </p>
+</main>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+
+let dumpSource = "";
+let parsedResults = [];
+
+/*
+ * Chuẩn hóa tên kiểu dữ liệu để so sánh.
+ */
+function normalizeType(value) {
+  return value
+    .replace(/\b(System\.)/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[ch]);
+}
+
+function unquote(value) {
+  return value.replace(/^["']|["']$/g, "");
+}
+
+/*
+ * Nhận dạng các comment địa chỉ thường gặp:
+ *
+ * // RVA: 0x123456 Offset: 0x123456 VA: 0x...
+ * // RVA: 123456
+ * // Offset: 123456
+ *
+ * Không coi TypeDefIndex, MethodInfo hoặc số dòng là RVA.
+ */
+function extractAddresses(text) {
+  const out = { rva: null, offset: null, va: null };
+
+  const patterns = {
+    rva: /\bRVA\s*:\s*(0x[0-9a-f]+|\d+)\b/i,
+    offset: /\bOffset\s*:\s*(0x[0-9a-f]+|\d+)\b/i,
+    va: /\bVA\s*:\s*(0x[0-9a-f]+|\d+)\b/i
+  };
+
+  for (const key of Object.keys(patterns)) {
+    const match = text.match(patterns[key]);
+    if (match) out[key] = match[1];
+  }
+
+  return out;
+}
+
+/*
+ * Tách danh sách tham số theo dấu phẩy ở cấp ngoài.
+ * Hỗ trợ kiểu generic có dấu phẩy bên trong <...>.
+ */
+function splitParameters(text) {
+  const result = [];
+  let depth = 0;
+  let start = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "<") depth++;
+    if (text[i] === ">") depth = Math.max(0, depth - 1);
+
+    if (text[i] === "," && depth === 0) {
+      result.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+
+  const last = text.slice(start).trim();
+  if (last) result.push(last);
+
+  return result;
+}
+
+function parseParameterTypes(text) {
+  if (!text.trim()) return [];
+
+  return splitParameters(text).map(param => {
+    let p = param
+      .replace(/^\s*(ref|out|in|params|this)\s+/, "")
+      .replace(/\s*=\s*[\s\S]*$/, "")
+      .trim();
+
+    // Bỏ tên biến ở cuối tham số nếu có.
+    p = p.replace(/\s+[A-Za-z_]\w*\s*$/, "").trim();
+
+    return normalizeType(p);
+  });
+}
+
+/*
+ * Phân tích khai báo phương thức kiểu C# trong dump.
+ * Bỏ qua property, field và constructor không có kiểu trả về.
+ */
+function parseDeclaration(line) {
+  const source = line.trim();
+
+  if (!source ||
+      source.startsWith("//") ||
+      source.startsWith("/*") ||
+      source.startsWith("*") ||
+      source.startsWith("[") ||
+      source.startsWith("#")) {
+    return null;
+  }
+
+  // Loại các dòng không phải khai báo method.
+  if (/\b(class|interface|enum|struct|namespace|delegate)\b/.test(source)) {
+    return null;
+  }
+
+  const match = source.match(
+    /^(?:(?:public|private|protected|internal|static|virtual|override|abstract|extern|async|new|unsafe|sealed|partial|readonly|extern)\s+)*(?:[\w.$`<>\[\],?]+\s+)+([A-Za-z_$~][\w$~]*)\s*\((.*)\)\s*(?:where\b[\s\S]*)?$/
+  );
+
+  if (!match) return null;
+
+  const name = match[1];
+  const params = match[2];
+
+  const prefix = source.slice(0, match.index + match[0].indexOf(name));
+  const tokens = prefix.trim().split(/\s+/);
+  const returnType = tokens[tokens.length - 1] || "";
+
+  if (!returnType || returnType === name) return null;
+
+  // Loại trường hợp khai báo không giống method.
+  if (/\b(return|new)\b/.test(returnType)) return null;
+
+  return {
+    name,
+    returnType,
+    parameters: params.trim(),
+    parameterTypes: parseParameterTypes(params),
+    declaration: source
+  };
+}
+
+/*
+ * Đọc namespace/class hiện tại và địa chỉ nằm ở comment
+ * phía trên khai báo method.
+ *
+ * Các dump có cấu trúc khác nhau có thể cần điều chỉnh parser.
+ */
+function parseDump(source) {
+  const lines = source.split(/\r?\n/);
+  const results = [];
+
+  let namespace = "";
+  let className = "";
+  let pendingComments = [];
+  let braceDepth = 0;
+  let classStack = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    const nsMatch = trimmed.match(/^\/\/\s*Namespace:\s*(.*)$/);
+    if (nsMatch) {
+      namespace = nsMatch[1].trim();
+      pendingComments = [line];
+      continue;
+    }
+
+    const classMatch = trimmed.match(
+      /^(?:(?:public|private|protected|internal|abstract|sealed|static|partial|unsafe)\s+)*class\s+([A-Za-z_$][\w$`]*)/
+    );
+
+    if (classMatch) {
+      className = classMatch[1];
+      pendingComments = [line];
+      classStack.push({ name: className, depth: braceDepth });
+      continue;
+    }
+
+    if (/^\/\//.test(trimmed)) {
+      pendingComments.push(line);
+
+      // Giữ cửa sổ comment vừa đủ để bắt metadata.
+      if (pendingComments.length > 12) {
+        pendingComments.shift();
+      }
+      continue;
+    }
+
+    if (!trimmed) continue;
+
+    const declaration = parseDeclaration(trimmed);
+
+    if (declaration) {
+      const comments = pendingComments.join("\n");
+      const addresses = extractAddresses(comments);
+
+      results.push({
+        namespace,
+        className,
+        ...declaration,
+        ...addresses,
+        line: i + 1,
+        metadata: comments
+      });
+    }
+
+    pendingComments = [];
+
+    /*
+     * Dùng brace depth để theo dõi phạm vi class.
+     * Với dump IL2CPP dạng khai báo phẳng không có ngoặc,
+     * class được lấy từ comment // class ... kế tiếp.
+     */
+    for (const ch of line) {
+      if (ch === "{") braceDepth++;
+      if (ch === "}") braceDepth--;
+    }
+
+    while (classStack.length &&
+           braceDepth < classStack[classStack.length - 1].depth) {
+      classStack.pop();
+      className = classStack.length
+        ? classStack[classStack.length - 1].name
+        : "";
+    }
+  }
+
+  return results;
+}
+
+function matchesFilters(item) {
+  const classFilter = $("className").value.trim().toLowerCase();
+  const nsFilter = $("namespaceName").value.trim().toLowerCase();
+  const returnFilter = $("returnType").value.trim();
+  const paramsFilter = $("parameters").value.trim();
+
+  if (classFilter &&
+      !item.className.toLowerCase().includes(classFilter)) {
+    return false;
+  }
+
+  if (nsFilter &&
+      !item.namespace.toLowerCase().includes(nsFilter)) {
+    return false;
+  }
+
+  if (returnFilter &&
+      normalizeType(item.returnType) !== normalizeType(returnFilter)) {
+    return false;
+  }
+
+  if (paramsFilter) {
+    const expected = parseParameterTypes(paramsFilter);
+    const actual = item.parameterTypes;
+
+    if (expected.length !== actual.length) return false;
+
+    for (let i = 0; i < expected.length; i++) {
+      if (expected[i] !== actual[i]) return false;
+    }
+  }
+
+  return true;
+}
+
+function searchMethods() {
+  if (!dumpSource.trim()) {
+    $("searchStatus").textContent =
+      "Vui lòng nạp file dump.cs hoặc dán nội dung dump.";
+    $("searchStatus").className = "status error";
+    return;
+  }
+
+  const names = $("queries").value
+    .split(/\r?\n/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (!names.length) {
+    $("searchStatus").textContent =
+      "Hãy nhập ít nhất một tên hàm.";
+    $("searchStatus").className = "status error";
+    return;
+  }
+
+  const methods = parseDump(dumpSource);
+  const wanted = new Set(names.map(n => n.toLowerCase()));
+
+  parsedResults = methods.filter(item =>
+    wanted.has(item.name.toLowerCase()) &&
+    matchesFilters(item)
+  );
+
+  renderResults();
+
+  $("searchStatus").textContent =
+    `Đã phân tích ${methods.length} khai báo phương thức; ` +
+    `tìm thấy ${parsedResults.length} kết quả phù hợp.`;
+  $("searchStatus").className = "status";
+}
+
+function renderResults() {
+  const total = parsedResults.length;
+  const found = parsedResults.filter(x => x.rva !== null).length;
+
+  $("totalMethods").textContent = total;
+  $("withRva").textContent = found;
+  $("withoutRva").textContent = total - found;
+
+  if (!total) {
+    $("results").innerHTML =
+      "<p>Không tìm thấy kết quả. Hãy kiểm tra định dạng dump, " +
+      "tên hàm và bộ lọc class/namespace.</p>";
+    return;
+  }
+
+  $("results").innerHTML = parsedResults.map((item, index) => {
+    const rva = item.rva ?? "Không có trong dump";
+    const offset = item.offset ?? "Không có trong dump";
+    const va = item.va ?? "Không có trong dump";
+
+    const params = item.parameters
+      ? item.parameters
+      : "(không có tham số)";
+
+    return `
+      <article class="result">
+        <div class="result-head">
+          <div>
+            <div class="method">
+              ${escapeHtml(item.name)}
+              <span class="small">#${index + 1}</span>
+            </div>
+            <div class="small">
+              ${escapeHtml(item.namespace || "(namespace không xác định)")}
+              · ${escapeHtml(item.className || "(class không xác định)")}
+            </div>
+          </div>
+          <button data-copy="${index}">Sao chép RVA</button>
+        </div>
+
+        <p>
+          <b>Kiểu trả về:</b> <code>${escapeHtml(item.returnType)}</code>
+        </p>
+        <p>
+          <b>Khai báo:</b>
+          <code>${escapeHtml(item.declaration)}</code>
+        </p>
+        <p>
+          <b>Tham số:</b> ${escapeHtml(params)}
+        </p>
+
+        <div class="addresses">
+          <div class="address"><b>RVA:</b> ${escapeHtml(rva)}</div>
+          <div class="address"><b>Offset:</b> ${escapeHtml(offset)}</div>
+          <div class="address"><b>VA:</b> ${escapeHtml(va)}</div>
+        </div>
+
+        <div class="small">
+          Dòng ${item.line}.
+          ${item.rva === null
+            ? "Không tìm thấy metadata RVA trong các comment ngay trước khai báo."
+            : "Đã tìm thấy trường RVA trong metadata."}
+        </div>
+      </article>`;
+  }).join("");
+
+  $("results").querySelectorAll("[data-copy]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const item = parsedResults[Number(button.dataset.copy)];
+      await copyText(item.rva || "");
+      button.textContent = item.rva ? "Đã sao chép" : "Chưa có RVA";
+    });
+  });
+}
+
+async function copyText(text) {
+  if (!text) {
+    alert("Không có RVA để sao chép.");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const temp = document.createElement("textarea");
+    temp.value = text;
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand("copy");
+    temp.remove();
+  }
+}
+
+$("dumpFile").addEventListener("change", async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  try {
+    dumpSource = await file.text();
+    $("dumpText").value = dumpSource;
+    $("fileStatus").textContent =
+      `Đã đọc ${file.name} — ${file.size.toLocaleString()} bytes.`;
+    $("fileStatus").className = "status";
+  } catch (error) {
+    $("fileStatus").textContent =
+      "Không đọc được file: " + error.message;
+    $("fileStatus").className = "status error";
+  }
+});
+
+$("dumpText").addEventListener("input", event => {
+  dumpSource = event.target.value;
+  $("fileStatus").textContent = "Đang dùng nội dung trong ô văn bản.";
+});
+
+$("clearDump").addEventListener("click", () => {
+  dumpSource = "";
+  $("dumpText").value = "";
+  $("dumpFile").value = "";
+  $("fileStatus").textContent = "Đã xóa nội dung.";
+  $("results").innerHTML = "<p>Hãy nạp dump và nhấn Tìm RVA.</p>";
+  parsedResults = [];
+  renderResults();
+});
+
+$("searchBtn").addEventListener("click", searchMethods);
+
+$("exportBtn").addEventListener("click", () => {
+  if (!parsedResults.length) {
+    alert("Chưa có kết quả để xuất.");
+    return;
+  }
+
+  const blob = new Blob(
+    [JSON.stringify(parsedResults, null, 2)],
+    { type: "application/json;charset=utf-8" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "rva-results.json";
+  link.click();
+  URL.revokeObjectURL(url);
+});
+
+$("copyAllBtn").addEventListener("click", () => {
+  const output = parsedResults.map(item =>
+    `${item.namespace} | ${item.className} | ` +
+    `${item.returnType} ${item.name}(${item.parameters}) | ` +
+    `RVA: ${item.rva ?? "N/A"} | ` +
+    `Offset: ${item.offset ?? "N/A"} | ` +
+    `VA: ${item.va ?? "N/A"}`
+  ).join("\n");
+
+  copyText(output);
+});
+</script>
+</body>
+</html>
