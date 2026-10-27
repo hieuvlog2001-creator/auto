@@ -186,7 +186,11 @@ code {
     <p>Mỗi dòng nhập một chữ ký hàm. Nạp dump.cs ở mục 01, bấm Cập nhật RVA để điền địa chỉ vào cột RVA. Nếu tìm thấy nhiều hàm cùng chữ ký, công cụ sẽ báo trùng và không tự chọn bừa.</p>
     <label for="functionList">Chữ ký hàm — mỗi dòng một hàm</label>
     <textarea id="functionList">public bool SetVisible(COM_PLAYERCAMP camp, bool bVisible, bool forceSync = False) { }
-private void OnCameraHeightChanged() { }</textarea>
+private void OnCameraHeightChanged() { }
+private void Update() { }
+public float GetZoomRate() { }
+public bool get_IsHostProfile() { }
+public static IPlayerSystem get_CPlayerInfoSystems() { }</textarea>
     <div class="actions">
       <button class="primary" id="updateTableBtn">Cập nhật RVA</button>
       <button id="saveTableBtn">Lưu bảng (CSV)</button>
