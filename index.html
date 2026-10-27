@@ -188,7 +188,7 @@ code {
 
   <section class="panel" id="rvaTablePanel">
     <h2>03. Danh sách hàm cần cập nhật RVA</h2>
-    <p>Mỗi dòng nhập một chữ ký hàm. Nạp dump.cs ở mục 01, bấm Cập nhật RVA để điền địa chỉ vào cột RVA. Nếu tìm thấy nhiều hàm cùng chữ ký, công cụ sẽ báo trùng và không tự chọn bừa.</p>
+    <p>Mỗi dòng nhập một chữ ký hoặc tên hàm. Nếu trùng kết quả, thêm Class theo dạng ClassName::MethodName (ví dụ HeroSelectNormalWindow::InitTeamHeroList). Cách nhập chữ ký đầy đủ vẫn được hỗ trợ.</p>
     <label for="functionList">Chữ ký hàm — mỗi dòng một hàm</label>
     <textarea id="functionList">public bool SetVisible(COM_PLAYERCAMP camp, bool bVisible, bool forceSync = False) { }
 private void OnCameraHeightChanged() { }
@@ -199,7 +199,7 @@ public static IPlayerSystem get_CPlayerInfoSystems() { }</textarea>
     <label for="functionTxtFile" style="margin-top:12px">Hoặc nạp danh sách hàm từ file .txt</label>
     <input id="functionTxtFile" type="file" accept=".txt,text/plain,*/*">
     <label for="singleFunction" style="margin-top:12px">Thêm hàm / sửa hàm đã chọn</label>
-    <input id="singleFunction" type="text" placeholder="Dán chữ ký hàm vào đây">
+    <input id="singleFunction" type="text" placeholder="Tên hàm, chữ ký đầy đủ hoặc ClassName::TênHàm">
     <div class="actions">
       <button id="addFunctionBtn" type="button">Thêm hàm</button>
       <button id="editFunctionBtn" type="button">Sửa hàm đã chọn</button>
@@ -901,14 +901,18 @@ function normalizeSignatureType(v) {
 }
 function signatureForTable(line) {
   const cleaned = line.trim();
-  const d = parseDeclaration(cleaned);
-  if (d) return { name:d.name, returnType:d.returnType, parameterTypes:d.parameterTypes || parseParameterTypes(d.parameters), hasSignature:true, declaration:cleaned };
+  // Tùy chọn lọc class: ClassName::MethodName hoặc ClassName::full method signature.
+  // Giữ nguyên chuỗi gốc trong bảng để người dùng dễ nhận biết điều kiện tìm kiếm.
+  const classMatch = cleaned.match(/^(.+?)\s*::\s*(.+)$/);
+  const classFilter = classMatch ? classMatch[1].trim() : null;
+  const methodText = classMatch ? classMatch[2].trim() : cleaned;
+  const d = parseDeclaration(methodText);
+  if (d) return { name:d.name, returnType:d.returnType, parameterTypes:d.parameterTypes || parseParameterTypes(d.parameters), hasSignature:true, classFilter, declaration:cleaned };
 
-  // Cho phép nhập riêng tên hàm, ví dụ: OnClickSelectHeroSkin
-  // hoặc tên có ngoặc rỗng: OnClickSelectHeroSkin().
-  const nameOnly = cleaned.match(/^([A-Za-z_$~][\w$~]*)\s*\(\s*\)\s*;?$/)
-    || cleaned.match(/^([A-Za-z_$~][\w$~]*)$/);
-  if (nameOnly) return { name:nameOnly[1], returnType:null, parameterTypes:null, hasSignature:false, declaration:cleaned };
+  // Cho phép nhập riêng tên hàm, ví dụ: OnClickSelectHeroSkin hoặc OnClickSelectHeroSkin().
+  const nameOnly = methodText.match(/^([A-Za-z_$~][\w$~]*)\s*\(\s*\)\s*;?$/)
+    || methodText.match(/^([A-Za-z_$~][\w$~]*)$/);
+  if (nameOnly) return { name:nameOnly[1], returnType:null, parameterTypes:null, hasSignature:false, classFilter, declaration:cleaned };
   return null;
 }
 let selectedFunctionIndex = -1;
@@ -991,12 +995,18 @@ function updateRvaTable() {
         const sig = signatureForTable(line);
         if (!sig) return {declaration:line,className:'',rva:'',status:'Không đọc được chữ ký'};
         const sameName = dumpMethods.filter(m => m.name.toLowerCase() === sig.name.toLowerCase());
-        const matches = sig.hasSignature ? sameName.filter(m =>
+        const classMatches = sig.classFilter ? sameName.filter(m => {
+          const actual = String(m.className || '').toLowerCase();
+          const wanted = sig.classFilter.toLowerCase();
+          return actual === wanted || actual.endsWith('.' + wanted) || actual.endsWith('+' + wanted) || actual.endsWith('/' + wanted);
+        }) : sameName;
+        const matches = sig.hasSignature ? classMatches.filter(m =>
           normalizeSignatureType(m.returnType) === normalizeSignatureType(sig.returnType)
           && (m.parameterTypes || parseParameterTypes(m.parameters)).length === sig.parameterTypes.length
-          && (m.parameterTypes || parseParameterTypes(m.parameters)).every((p,i)=>normalizeSignatureType(p)===normalizeSignatureType(sig.parameterTypes[i]))) : sameName;
-        if (matches.length === 1) return {declaration:line,className:matches[0].className,rva:matches[0].rva,offset:matches[0].offset,va:matches[0].va,status:sig.hasSignature?'Đã tìm thấy':'Đã tìm thấy theo tên'};
-        if (matches.length > 1) return {declaration:line,className:matches.map(m=>m.className).filter(Boolean).join(', '),rva:'',status:`Trùng ${matches.length} kết quả — nhập đầy đủ chữ ký hoặc class`};
+          && (m.parameterTypes || parseParameterTypes(m.parameters)).every((p,i)=>normalizeSignatureType(p)===normalizeSignatureType(sig.parameterTypes[i]))) : classMatches;
+        if (matches.length === 1) return {declaration:line,className:matches[0].className,rva:matches[0].rva,offset:matches[0].offset,va:matches[0].va,status:sig.classFilter ? 'Đã tìm thấy theo Class' : (sig.hasSignature?'Đã tìm thấy':'Đã tìm thấy theo tên')};
+        if (matches.length > 1) return {declaration:line,className:matches.map(m=>m.className).filter(Boolean).join(', '),rva:'',status:`Trùng ${matches.length} kết quả — nhập ClassName::TênHàm hoặc chữ ký đầy đủ`};
+        if (sig.classFilter && classMatches.length === 0) return {declaration:line,className:sameName.map(m=>m.className).filter(Boolean).join(', '),rva:'',status:sameName.length ? `Không có kết quả trong Class ${sig.classFilter}` : 'Không tìm thấy'};
         return {declaration:line,className:'',rva:'',status:sameName.length ? 'Có tên hàm nhưng chữ ký không khớp' : 'Không tìm thấy'};
       });
       renderRvaTable();
