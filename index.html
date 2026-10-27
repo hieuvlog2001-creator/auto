@@ -357,7 +357,7 @@ function parseDeclaration(line) {
   }
 
   const match = source.match(
-    /^(?:(?:public|private|protected|internal|static|virtual|override|abstract|extern|async|new|unsafe|sealed|partial|readonly|extern)\s+)*(?:[\w.$`<>\[\],?]+\s+)+([A-Za-z_$~][\w$~]*)\s*\((.*)\)\s*(?:where\b[\s\S]*)?$/
+    /^(?:(?:public|private|protected|internal|static|virtual|override|abstract|extern|async|new|unsafe|sealed|partial|readonly)\s+)*(?:[\w.$`<>\[\],?]+\s+)+([A-Za-z_$~][\w$~]*)\s*\((.*)\)\s*(?:where\b[\s\S]*?)?\s*(?:\{\s*\})?$/
   );
 
   if (!match) return null;
