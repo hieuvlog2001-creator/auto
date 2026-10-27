@@ -529,7 +529,13 @@ function searchMethods() {
   }
 
   const methods = parseDump(dumpSource);
-  const wanted = new Set(names.map(n => n.toLowerCase()));
+  // Cho phép nhập tên hàm đơn giản (SetVisible), khai báo (public bool SetVisible)
+  // hoặc chữ ký có tham số. Bộ lọc tên được chuẩn hóa về tên method.
+  const wanted = new Set(names.map(n => {
+    const beforeParen = n.split("(")[0].trim();
+    const tokens = beforeParen.split(/\s+/);
+    return tokens[tokens.length - 1].replace(/[&*]+$/, "").toLowerCase();
+  }));
 
   parsedResults = methods.filter(item =>
     wanted.has(item.name.toLowerCase()) &&
@@ -643,9 +649,10 @@ $("dumpFile").addEventListener("change", async event => {
 
   try {
     dumpSource = await file.text();
-    $("dumpText").value = dumpSource;
+    // Không chép dump lớn vào textarea: tránh dựng thêm một bản sao nặng trên giao diện.
+    $("dumpText").value = "";
     $("fileStatus").textContent =
-      `Đã đọc ${file.name} — ${file.size.toLocaleString()} bytes.`;
+      `Đã nạp ${file.name} — ${(file.size / 1024 / 1024).toFixed(2)} MB. Nội dung được giữ trong bộ nhớ; không hiển thị toàn bộ vào ô văn bản.`;
     $("fileStatus").className = "status";
   } catch (error) {
     $("fileStatus").textContent =
