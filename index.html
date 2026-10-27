@@ -209,6 +209,16 @@ public static IPlayerSystem get_CPlayerInfoSystems() { }</textarea>
       <button id="saveJsonBtn">Lưu bảng (JSON)</button>
     </div>
     <div id="tableStatus" class="status">Chưa cập nhật RVA.</div>
+    <div class="panel" style="margin:12px 0;padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:12px">
+      <h3 style="margin-top:0">Chọn hàm riêng khi bị trùng kết quả</h3>
+      <p class="small">Nếu một tên hàm có 2 kết quả trở lên, nhập tên hàm vào đây. Website sẽ liệt kê các kết quả để bạn chọn trực tiếp, không cần nhập chữ ký đầy đủ hay ClassName.</p>
+      <label for="duplicateFunctionSearch">Tên hàm bị trùng</label>
+      <div class="grid" style="grid-template-columns:minmax(0,1fr) auto;gap:8px">
+        <input id="duplicateFunctionSearch" type="text" placeholder="Ví dụ: InitTeamHeroList">
+        <button id="searchDuplicateBtn" type="button">Tìm hàm trùng</button>
+      </div>
+      <div id="duplicateFunctionResults" style="margin-top:10px"></div>
+    </div>
     <div class="table-scroll" style="margin-top:12px">
       <table id="rvaTable" style="width:100%;border-collapse:collapse;min-width:900px">
         <thead><tr><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">#</th><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Hàm</th><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Class</th><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">RVA mới</th><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Trạng thái</th></tr></thead>
@@ -1005,7 +1015,7 @@ function updateRvaTable() {
           && (m.parameterTypes || parseParameterTypes(m.parameters)).length === sig.parameterTypes.length
           && (m.parameterTypes || parseParameterTypes(m.parameters)).every((p,i)=>normalizeSignatureType(p)===normalizeSignatureType(sig.parameterTypes[i]))) : classMatches;
         if (matches.length === 1) return {declaration:line,className:matches[0].className,rva:matches[0].rva,offset:matches[0].offset,va:matches[0].va,status:sig.classFilter ? 'Đã tìm thấy theo Class' : (sig.hasSignature?'Đã tìm thấy':'Đã tìm thấy theo tên')};
-        if (matches.length > 1) return {declaration:line,className:matches.map(m=>m.className).filter(Boolean).join(', '),rva:'',status:`Trùng ${matches.length} kết quả — nhập ClassName::TênHàm hoặc chữ ký đầy đủ`};
+        if (matches.length > 1) return {declaration:line,className:matches.map(m=>m.className).filter(Boolean).join(', '),rva:'',status:`Trùng ${matches.length} kết quả — dùng mục “Chọn hàm riêng khi bị trùng kết quả” bên dưới`};
         if (sig.classFilter && classMatches.length === 0) return {declaration:line,className:sameName.map(m=>m.className).filter(Boolean).join(', '),rva:'',status:sameName.length ? `Không có kết quả trong Class ${sig.classFilter}` : 'Không tìm thấy'};
         return {declaration:line,className:'',rva:'',status:sameName.length ? 'Có tên hàm nhưng chữ ký không khớp' : 'Không tìm thấy'};
       });
@@ -1017,6 +1027,62 @@ function updateRvaTable() {
     } catch(err) { status.textContent='Lỗi: '+err.message; status.className='status error'; }
   }, 20);
 }
+function searchDuplicateFunctions() {
+  const input = $("duplicateFunctionSearch");
+  const container = $("duplicateFunctionResults");
+  const query = input.value.trim();
+  if (!dumpSource.trim()) {
+    container.innerHTML = '<p class="status error">Trước tiên hãy nạp file dump.cs ở mục 01.</p>';
+    return;
+  }
+  if (!query) {
+    container.innerHTML = '<p class="status error">Nhập tên hàm cần tìm.</p>';
+    return;
+  }
+  const methods = parseDump(dumpSource).filter(m => m.name && m.name.toLowerCase() === query.toLowerCase());
+  if (!methods.length) {
+    container.innerHTML = '<p class="status">Không tìm thấy hàm có tên này trong dump.cs.</p>';
+    return;
+  }
+  if (methods.length === 1) {
+    container.innerHTML = '<p class="status">Chỉ tìm thấy một kết quả. Bạn có thể dùng nút “Cập nhật RVA” ở danh sách chính.</p>';
+  } else {
+    container.innerHTML = `<p class="status">Tìm thấy ${methods.length} kết quả. Chọn đúng hàm bên dưới:</p>` + methods.map((m, i) => {
+      const sig = `${m.returnType || ''} ${m.name}(${m.parameters || ''})`.trim();
+      const addr = m.rva || m.offset || 'Không có RVA';
+      return `<div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin:8px 0;overflow-wrap:anywhere">
+        <div><strong>Kết quả ${i+1}</strong> — ${escapeHtml(m.className || 'Class không xác định')}</div>
+        <div class="small">${escapeHtml(m.namespace || '(không có namespace)')}</div>
+        <div style="font-family:ui-monospace,monospace;margin:6px 0">${escapeHtml(sig)}</div>
+        <div class="small">RVA: ${escapeHtml(m.rva || '—')} · Offset: ${escapeHtml(m.offset || '—')} · Dòng dump: ${m.line || '—'}</div>
+        <button type="button" data-duplicate-choice="${i}" style="margin-top:8px">Chọn hàm này</button>
+      </div>`;
+    }).join('');
+    container.querySelectorAll('[data-duplicate-choice]').forEach(button => button.addEventListener('click', () => {
+      const chosen = methods[Number(button.dataset.duplicateChoice)];
+      let updated = 0;
+      rvaTableRows = rvaTableRows.map(row => {
+        const sig = signatureForTable(row.declaration || '');
+        if (sig && sig.name.toLowerCase() === chosen.name.toLowerCase() && !sig.hasSignature) {
+          updated++;
+          return {...row, className:chosen.className || '', rva:chosen.rva || '', offset:chosen.offset || '', va:chosen.va || '', status:'Đã chọn thủ công trong kết quả trùng'};
+        }
+        return row;
+      });
+      renderRvaTable();
+      persistRvaTable();
+      const status = $("tableStatus");
+      status.textContent = updated
+        ? `Đã chọn ${chosen.name} trong Class ${chosen.className || '(không xác định)'}. Đã cập nhật ${updated} dòng trùng tên.`
+        : `Đã chọn ${chosen.name} trong Class ${chosen.className || '(không xác định)'}, nhưng không có dòng tên hàm đơn giản tương ứng trong bảng chính.`;
+      status.className = 'status';
+      container.insertAdjacentHTML('afterbegin', '<p class="status">Đã áp dụng lựa chọn vào bảng RVA.</p>');
+    }));
+  }
+}
+$("searchDuplicateBtn").addEventListener('click', searchDuplicateFunctions);
+$("duplicateFunctionSearch").addEventListener('keydown', e => { if (e.key === 'Enter') searchDuplicateFunctions(); });
+
 $("updateTableBtn").addEventListener('click', updateRvaTable);
 $("saveTableBtn").addEventListener('click', () => {
   if (!rvaTableRows.length) { alert('Hãy bấm Cập nhật RVA trước.'); return; }
