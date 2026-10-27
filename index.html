@@ -68,7 +68,13 @@ textarea {
   resize: vertical;
   font-family: ui-monospace, monospace;
 }
-input[type="file"] { padding: 8px; }
+input[type="file"] { padding: 8px; max-width: 100%; min-height: 44px; }
+.mobile-file-hint { font-size: .9rem; color: var(--muted); margin-top: 8px; }
+@media (max-width: 600px) {
+  main { padding: 12px; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  input[type="file"] { font-size: 14px; }
+}
 button {
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -157,8 +163,8 @@ code {
   <section class="panel">
     <h2>01. Nạp file dump</h2>
     <label for="dumpFile">Chọn file dump.cs hoặc file văn bản dump</label>
-    <input id="dumpFile" type="file"
-           accept=".cs,.txt,.dump,.log">
+    <input id="dumpFile" type="file" accept="*/*">
+    <p class="mobile-file-hint">Trên điện thoại: nhấn “Chọn tệp / Browse”, mở mục Tệp hoặc Downloads rồi chọn dump.cs. Bộ chọn tệp cho phép chọn mọi loại file để tránh điện thoại lọc mất file .cs.</p>
     <div id="fileStatus" class="status">Chưa chọn file.</div>
     <textarea id="dumpText" hidden></textarea><button id="clearDump" hidden type="button">Xóa</button>
   </section>
@@ -167,7 +173,7 @@ code {
     <h2>02. File mã nguồn cần cập nhật</h2>
     <p>Chọn file .h, .cpp, .mm hoặc .txt có chứa các hàm/địa chỉ cũ. Sau khi nạp dump.cs và file mã nguồn, bấm “Cập Nhật RVA” để tạo file đã cập nhật và tải về.</p>
     <label for="targetFile">Chọn file mã nguồn cần sửa</label>
-    <input id="targetFile" type="file" accept=".h,.hpp,.c,.cc,.cpp,.m,.mm,.txt,.cs">
+    <input id="targetFile" type="file" accept="*/*">
     <div id="targetStatus" class="status">Chưa chọn file mã nguồn.</div>
     <div class="actions">
       <button class="primary" id="updateRvaBtn">Cập Nhật RVA</button>
