@@ -170,7 +170,7 @@ code {
     <h2>02. Cấu hình tìm kiếm</h2>
 
     <label for="queries">Tên hàm cần tìm — mỗi dòng một hàm</label>
-    <textarea id="queries">public bool SetVisible(COM_PLAYERCAMP camp, bool bVisible, bool forceSync = False) { }
+    <textarea id="queries">SetVisible
 ShowHeroInfo
 GetGameRoomType</textarea>
 
@@ -356,8 +356,11 @@ function parseDeclaration(line) {
     return null;
   }
 
-  const match = source.match(
-    /^(?:(?:public|private|protected|internal|static|virtual|override|abstract|extern|async|new|unsafe|sealed|partial|readonly)\s+)*(?:[\w.$`<>\[\],?]+\s+)+([A-Za-z_$~][\w$~]*)\s*\((.*)\)\s*(?:where\b[\s\S]*?)?\s*(?:\{\s*\})?$/
+  // Dump.cs thường kết thúc khai báo bằng "{ }" hoặc ";".
+  // Bỏ phần thân rỗng trước khi phân tích chữ ký method.
+  const normalizedSource = source.replace(/\s*\{\s*\}\s*;?\s*$/, "").replace(/\s*;\s*$/, "").trim();
+  const match = normalizedSource.match(
+    /^(?:(?:public|private|protected|internal|static|virtual|override|abstract|extern|async|new|unsafe|sealed|partial|readonly)\s+)*(?:[\w.$`<>\[\],?]+\s+)+([A-Za-z_$~][\w$~]*)\s*\((.*)\)\s*(?:where\b[\s\S]*)?$/
   );
 
   if (!match) return null;
@@ -365,7 +368,7 @@ function parseDeclaration(line) {
   const name = match[1];
   const params = match[2];
 
-  const prefix = source.slice(0, match.index + match[0].indexOf(name));
+  const prefix = normalizedSource.slice(0, match[0].indexOf(name));
   const tokens = prefix.trim().split(/\s+/);
   const returnType = tokens[tokens.length - 1] || "";
 
@@ -529,18 +532,45 @@ function searchMethods() {
   }
 
   const methods = parseDump(dumpSource);
-  // Cho phép nhập tên hàm đơn giản (SetVisible), khai báo (public bool SetVisible)
-  // hoặc chữ ký có tham số. Bộ lọc tên được chuẩn hóa về tên method.
-  const wanted = new Set(names.map(n => {
-    const beforeParen = n.split("(")[0].trim();
-    const tokens = beforeParen.split(/\s+/);
-    return tokens[tokens.length - 1].replace(/[&*]+$/, "").toLowerCase();
-  }));
+  // Hỗ trợ 3 dạng truy vấn:
+  // 1) SetVisible
+  // 2) public bool SetVisible
+  // 3) public bool SetVisible(COM_PLAYERCAMP camp, bool bVisible, bool forceSync = False) { }
+  // Nếu người dùng nhập đầy đủ chữ ký, tự đối chiếu kiểu trả về và kiểu/số lượng tham số.
+  const wanted = names.map(raw => {
+    const query = raw.trim();
+    const hasSignature = query.includes("(");
+    const parsed = parseDeclaration(query);
 
-  parsedResults = methods.filter(item =>
-    wanted.has(item.name.toLowerCase()) &&
-    matchesFilters(item)
-  );
+    if (parsed) {
+      return {
+        name: parsed.name.toLowerCase(),
+        hasSignature,
+        returnType: normalizeType(parsed.returnType),
+        parameterTypes: parsed.parameterTypes
+      };
+    }
+
+    const beforeParen = query.split("(")[0].trim();
+    const tokens = beforeParen.split(/\s+/);
+    return {
+      name: tokens[tokens.length - 1].replace(/[&*]+$/, "").toLowerCase(),
+      hasSignature: false,
+      returnType: "",
+      parameterTypes: []
+    };
+  });
+
+  parsedResults = methods.filter(item => {
+    const nameMatches = wanted.some(q => {
+      if (q.name !== item.name.toLowerCase()) return false;
+      if (!q.hasSignature) return true;
+      if (q.returnType && q.returnType !== normalizeType(item.returnType)) return false;
+      if (q.parameterTypes.length !== item.parameterTypes.length) return false;
+      return q.parameterTypes.every((type, i) => type === item.parameterTypes[i]);
+    });
+    return nameMatches && matchesFilters(item);
+  });
 
   renderResults();
 
