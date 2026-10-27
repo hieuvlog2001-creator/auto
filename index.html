@@ -7,6 +7,12 @@
 <title>IL2CPP Dump RVA Finder</title>
 
 <style>
+/* Giao diện rút gọn theo yêu cầu */
+#targetFile, #targetStatus, #updateRvaBtn, #updateStatus { display: none !important; }
+main > section.panel:nth-of-type(2) { display: none !important; }
+main > section.panel:nth-of-type(4), main > section.panel:nth-of-type(5) { display: none !important; }
+#rvaTablePanel > h2, #rvaTablePanel > p, #rvaTablePanel > label { display: none !important; }
+#functionList { display: none !important; }
 :root {
   color-scheme: dark;
   --bg: #0b1020;
@@ -154,16 +160,7 @@ code {
     <input id="dumpFile" type="file"
            accept=".cs,.txt,.dump,.log">
     <div id="fileStatus" class="status">Chưa chọn file.</div>
-
-    <div style="margin-top:15px">
-      <label for="dumpText">Hoặc dán nội dung dump vào đây</label>
-      <textarea id="dumpText"
-        placeholder="// RVA: 0x123456&#10;// Offset: 0x123456&#10;public bool SetVisible(COM_PLAYERCAMP camp, bool bVisible, bool forceSync = false)"></textarea>
-    </div>
-
-    <div class="actions">
-      <button id="clearDump">Xóa nội dung</button>
-    </div>
+    <textarea id="dumpText" hidden></textarea><button id="clearDump" hidden type="button">Xóa</button>
   </section>
 
   <section class="panel">
@@ -193,7 +190,7 @@ private void OnCameraHeightChanged() { }</textarea>
     <div style="overflow-x:auto;margin-top:12px">
       <table id="rvaTable" style="width:100%;border-collapse:collapse;min-width:650px">
         <thead><tr><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">#</th><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Hàm</th><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Class</th><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">RVA mới</th><th style="text-align:left;padding:8px;border-bottom:1px solid var(--border)">Trạng thái</th></tr></thead>
-        <tbody id="rvaTableBody"><tr><td colspan="5" style="padding:8px">Nhập hàm và bấm Cập nhật RVA.</td></tr></tbody>
+        <tbody id="rvaTableBody"><tr><td colspan="5" style="padding:8px">Nạp dump.cs rồi bấm Cập nhật RVA để hiển thị kết quả.</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -854,6 +851,28 @@ $("updateRvaBtn").addEventListener("click", updateRvaInSource);
 
 // Bảng RVA: khớp theo tên hàm, kiểu trả về và kiểu tham số; bỏ qua tên tham số/giá trị mặc định.
 let rvaTableRows = [];
+const RVA_TABLE_STORAGE_KEY = "il2cpp_rva_table_results_v1";
+function persistRvaTable() {
+  try { localStorage.setItem(RVA_TABLE_STORAGE_KEY, JSON.stringify(rvaTableRows)); }
+  catch (e) { console.warn("Không thể lưu bảng RVA vào trình duyệt:", e); }
+}
+function restoreRvaTable() {
+  try {
+    const saved = localStorage.getItem(RVA_TABLE_STORAGE_KEY);
+    if (!saved) return;
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return;
+    rvaTableRows = parsed.filter(r => r && typeof r === "object");
+    renderRvaTable();
+    if (rvaTableRows.length) {
+      const status = $("tableStatus");
+      if (status) {
+        status.textContent = `Đã khôi phục ${rvaTableRows.length} kết quả RVA đã lưu trên trình duyệt này.`;
+        status.className = "status";
+      }
+    }
+  } catch (e) { console.warn("Không thể khôi phục bảng RVA:", e); }
+}
 function normalizeSignatureType(v) {
   return String(v || "").replace(/\bSystem\./g, "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -895,6 +914,7 @@ function updateRvaTable() {
         return {declaration:line,className:'',rva:'',status:sameName.length ? 'Có tên hàm nhưng chữ ký không khớp' : 'Không tìm thấy'};
       });
       renderRvaTable();
+      persistRvaTable();
       const found = rvaTableRows.filter(r=>r.rva).length;
       status.textContent = `Hoàn tất: tìm thấy ${found}/${rvaTableRows.length} hàm. Các hàm trùng tên/chữ ký hoặc không tìm thấy sẽ được báo riêng.`;
       status.className='status';
@@ -912,7 +932,8 @@ $("saveJsonBtn").addEventListener('click', () => {
   if (!rvaTableRows.length) { alert('Hãy bấm Cập nhật RVA trước.'); return; }
   downloadTextFile(JSON.stringify(rvaTableRows,null,2), 'rva-updated.json');
 });
-$("functionList").addEventListener('input', () => { rvaTableRows=[]; renderRvaTable(); });
+$("functionList").addEventListener('input', () => { rvaTableRows=[]; persistRvaTable(); renderRvaTable(); });
+restoreRvaTable();
 
 $("searchBtn").addEventListener("click", searchMethods);
 
