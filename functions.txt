@@ -1,0 +1,5 @@
+public bool SetVisible(COM_PLAYERCAMP camp, bool bVisible, bool forceSync = False) { }
+private void OnCameraHeightChanged() { }
+public float GetZoomRate() { }
+public bool get_IsHostProfile() { }
+public static IPlayerSystem get_CPlayerInfoSystems() { }
