@@ -3,3 +3,4 @@ private void OnCameraHeightChanged() { }
 public float GetZoomRate() { }
 public bool get_IsHostProfile() { }
 public static IPlayerSystem get_CPlayerInfoSystems() { }
+void InitTeamHeroList(OLDSYS_CUIListScript listScript, COM_PLAYERCAMP camp, bool isLeftList = True, bool isMidPos = False)
